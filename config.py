@@ -1,0 +1,4 @@
+import os
+
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8105302690:AAEDx8wJW8myB-vchD2xOkTpWGbJniPSsz8")
+MAX_FILE_SIZE = 20 * 1024 * 1024
