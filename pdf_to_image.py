@@ -6,21 +6,11 @@ import os
 def convert_pdf_to_images(pdf_data, dpi=150):
     """
     Конвертирует PDF в список изображений
-    
-    Args:
-        pdf_data: PDF данные (bytes или file-like object)
-        dpi: качество изображения (по умолчанию 150)
-    
-    Returns:
-        tuple: (list_of_images, error_message)
     """
     try:
-        # Открываем PDF из bytes или файла
-        if isinstance(pdf_data, bytes):
-            pdf_stream = io.BytesIO(pdf_data)
-            pdf_document = fitz.open(stream=pdf_stream, filetype="pdf")
-        else:
-            pdf_document = fitz.open(pdf_data)
+        # Открываем PDF из bytes
+        pdf_stream = io.BytesIO(pdf_data)
+        pdf_document = fitz.open(stream=pdf_stream, filetype="pdf")
         
         images = []
         
@@ -29,7 +19,7 @@ def convert_pdf_to_images(pdf_data, dpi=150):
             page = pdf_document.load_page(page_num)
             
             # Создаем изображение страницы
-            mat = fitz.Matrix(dpi/72, dpi/72)  # Матрица для увеличения DPI
+            mat = fitz.Matrix(dpi/72, dpi/72)
             pix = page.get_pixmap(matrix=mat)
             
             # Конвертируем в PIL Image
@@ -51,9 +41,6 @@ def convert_pdf_to_images(pdf_data, dpi=150):
 def convert_pdf_to_images_zip(pdf_data, dpi=150):
     """
     Конвертирует PDF в ZIP архив с изображениями
-    
-    Returns:
-        tuple: (zip_data, error_message)
     """
     import zipfile
     
@@ -74,7 +61,7 @@ def convert_pdf_to_images_zip(pdf_data, dpi=150):
                 zip_file.writestr(f"page_{i+1}.jpg", img_buffer.getvalue())
         
         zip_buffer.seek(0)
-        return zip_buffer.getvalue(), None
+        return zip_buffer, None  # Возвращаем BytesIO объект, а не bytes
         
     except Exception as e:
         return None, f"Ошибка при создании ZIP архива: {str(e)}"
@@ -82,9 +69,6 @@ def convert_pdf_to_images_zip(pdf_data, dpi=150):
 def convert_pdf_to_single_image(pdf_data, dpi=150):
     """
     Конвертирует первую страницу PDF в одно изображение
-    
-    Returns:
-        tuple: (image_data, error_message)
     """
     try:
         images, error = convert_pdf_to_images(pdf_data, dpi)
@@ -99,7 +83,7 @@ def convert_pdf_to_single_image(pdf_data, dpi=150):
         images[0].save(img_buffer, format='JPEG', quality=85)
         img_buffer.seek(0)
         
-        return img_buffer.getvalue(), None
+        return img_buffer, None  # Возвращаем BytesIO объект
         
     except Exception as e:
         return None, f"Ошибка при конвертации: {str(e)}"
