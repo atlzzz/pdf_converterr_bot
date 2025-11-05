@@ -1,65 +1,59 @@
-import img2pdf
-from PIL import Image
 import os
-import io
+import logging
+from menu import create_main_menu
 
-def convert_image_to_pdf(image_data, filename=None):
+logger = logging.getLogger(__name__)
+
+
+async def convert_image_to_pdf(image_path):
     try:
 
-        if isinstance(image_data, bytes):
-            image_stream = io.BytesIO(image_data)
-        else:
-            image_stream = image_data
-        
-        if filename:
-            valid_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.gif']
-            file_ext = os.path.splitext(filename)[1].lower()
-            
-            if file_ext not in valid_extensions:
-                return None, f"Неподдерживаемый формат изображения: {file_ext}"
-        
-        try:
-            with Image.open(image_stream) as img:
-                if img.mode != 'RGB':
-                    img = img.convert('RGB')
-                
-                temp_buffer = io.BytesIO()
-                img.save(temp_buffer, format='JPEG')
-                temp_buffer.seek(0)
-                
-                pdf_data = img2pdf.convert(temp_buffer)
-                
-            return pdf_data, None
-            
-        except Exception as img_error:
-            return None, f"Ошибка обработки изображения: {str(img_error)}"
-        
-    except Exception as e:
-        return None, f"Ошибка при конвертации: {str(e)}"
+        from PIL import Image
 
-def convert_image_file_to_pdf(image_path, pdf_path=None):
-    """
-    Версия для работы с файлами на диске
-    """
-    try:
-        if pdf_path is None:
+        with Image.open(image_path) as img:
+            if img.mode in ('RGBA', 'P', 'LA'):
+                img = img.convert('RGB')
+
             base_name = os.path.splitext(image_path)[0]
-            pdf_path = base_name + ".pdf"
-        
-        if not os.path.exists(image_path):
-            return None, f"Файл {image_path} не найден"
-        
-        valid_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.gif']
-        file_ext = os.path.splitext(image_path)[1].lower()
-        
-        if file_ext not in valid_extensions:
-            return None, f"Неподдерживаемый формат изображения: {file_ext}"
-        
+            pdf_path = f"{base_name}.pdf"
 
-        with open(pdf_path, "wb") as pdf_file:
-            pdf_file.write(img2pdf.convert(image_path))
-        
-        return pdf_path, None
-        
+            img.save(pdf_path, "PDF", resolution=100.0)
+
+            logger.info(f"Успешно конвертировано: {image_path} -> {pdf_path}")
+            return pdf_path
+
     except Exception as e:
-        return None, f"Ошибка при конвертации: {str(e)}"
+        logger.error(f"Ошибка при конвертации {image_path}: {e}")
+        raise Exception(f"Не удалось конвертировать изображение в PDF: {e}")
+
+
+async def handle_image(update, context):
+    try:
+        await update.message.reply_text("🔄 Конвертирую изображение в PDF...")
+
+        photo_file = await update.message.photo[-1].get_file()
+        image_path = f"temp_{update.message.message_id}.jpg"
+        await photo_file.download_to_drive(image_path)
+        pdf_path = await convert_image_to_pdf(image_path)
+        with open(pdf_path, 'rb') as pdf_file:
+            await update.message.reply_document(
+                document=pdf_file,
+                filename="converted.pdf",
+                caption="✅ Ваш PDF файл готов!"
+            )
+
+        os.remove(image_path)
+        os.remove(pdf_path)
+
+        await update.message.reply_text(
+            "📋 Что дальше?",
+            reply_markup=create_main_menu()
+        )
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ Ошибка: {e}")
+
+        await update.message.reply_text(
+            "📋 Попробуйте ещё раз:",
+            reply_markup=create_main_menu()
+        )
