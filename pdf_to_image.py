@@ -1,89 +1,71 @@
-import fitz  # PyMuPDF
-from PIL import Image
-import io
+import fitz
 import os
+import logging
+from menu import create_main_menu
 
-def convert_pdf_to_images(pdf_data, dpi=150):
-    """
-    Конвертирует PDF в список изображений
-    """
+logger = logging.getLogger(__name__)
+
+
+async def convert_pdf_to_images(pdf_path):
     try:
-        # Открываем PDF из bytes
-        pdf_stream = io.BytesIO(pdf_data)
-        pdf_document = fitz.open(stream=pdf_stream, filetype="pdf")
-        
-        images = []
-        
-        # Конвертируем каждую страницу
+        if not os.path.exists(pdf_path):
+            raise FileNotFoundError(f"PDF файл не найден: {pdf_path}")
+
+        logger.info(f"Начинаю конвертацию PDF: {pdf_path}")
+        pdf_document = fitz.open(pdf_path)
+        image_paths = []
+        logger.info(f"PDF содержит {len(pdf_document)} страниц")
         for page_num in range(len(pdf_document)):
             page = pdf_document.load_page(page_num)
-            
-            # Создаем изображение страницы
-            mat = fitz.Matrix(dpi/72, dpi/72)
+            mat = fitz.Matrix(2.0, 2.0)
             pix = page.get_pixmap(matrix=mat)
-            
-            # Конвертируем в PIL Image
-            img_data = pix.tobytes("ppm")
-            img = Image.open(io.BytesIO(img_data))
-            
-            # Конвертируем в RGB если нужно
-            if img.mode != 'RGB':
-                img = img.convert('RGB')
-            
-            images.append(img)
-        
+            image_path = f"{os.path.splitext(pdf_path)[0]}_page_{page_num + 1}.jpg"
+            pix.save(image_path, "jpeg")
+            image_paths.append(image_path)
+
+            logger.info(f"Создана страница {page_num + 1}: {image_path}")
+
         pdf_document.close()
-        return images, None
-        
-    except Exception as e:
-        return None, f"Ошибка при конвертации PDF: {str(e)}"
+        logger.info(f"Конвертация завершена, создано {len(image_paths)} изображений")
+        return image_paths
 
-def convert_pdf_to_images_zip(pdf_data, dpi=150):
-    """
-    Конвертирует PDF в ZIP архив с изображениями
-    """
-    import zipfile
-    
-    try:
-        images, error = convert_pdf_to_images(pdf_data, dpi)
-        if error:
-            return None, error
-        
-        # Создаем ZIP архив в памяти
-        zip_buffer = io.BytesIO()
-        
-        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-            for i, img in enumerate(images):
-                img_buffer = io.BytesIO()
-                img.save(img_buffer, format='JPEG', quality=85)
-                img_buffer.seek(0)
-                
-                zip_file.writestr(f"page_{i+1}.jpg", img_buffer.getvalue())
-        
-        zip_buffer.seek(0)
-        return zip_buffer, None  # Возвращаем BytesIO объект, а не bytes
-        
     except Exception as e:
-        return None, f"Ошибка при создании ZIP архива: {str(e)}"
+        logger.error(f"Ошибка при конвертации PDF: {e}")
+        raise Exception(f"Не удалось конвертировать PDF: {e}")
 
-def convert_pdf_to_single_image(pdf_data, dpi=150):
-    """
-    Конвертирует первую страницу PDF в одно изображение
-    """
+
+async def handle_pdf(update, context):
     try:
-        images, error = convert_pdf_to_images(pdf_data, dpi)
-        if error:
-            return None, error
-        
-        if not images:
-            return None, "PDF файл не содержит страниц"
-        
-        # Возвращаем только первую страницу
-        img_buffer = io.BytesIO()
-        images[0].save(img_buffer, format='JPEG', quality=85)
-        img_buffer.seek(0)
-        
-        return img_buffer, None  # Возвращаем BytesIO объект
-        
+        await update.message.reply_text("🔄 Обрабатываю PDF файл...")
+        document = update.message.document
+        pdf_file = await document.get_file()
+        pdf_path = f"temp_pdf_{update.message.message_id}.pdf"
+        await pdf_file.download_to_drive(pdf_path)
+        logger.info(f"PDF скачан: {pdf_path}")
+        image_paths = await convert_pdf_to_images(pdf_path)
+        for i, image_path in enumerate(image_paths):
+            if os.path.exists(image_path) and os.path.getsize(image_path) > 0:
+                with open(image_path, 'rb') as img_file:
+                    await update.message.reply_photo(
+                        photo=img_file,
+                        caption=f"📄 Страница {i + 1}"
+                    )
+                os.remove(image_path)
+
+        os.remove(pdf_path)
+
+        await update.message.reply_text(f"✅ Готово! Извлечено {len(image_paths)} страниц.")
+
+        await update.message.reply_text(
+            "📋 Что дальше?",
+            reply_markup=create_main_menu()
+        )
+
     except Exception as e:
-        return None, f"Ошибка при конвертации: {str(e)}"
+        logger.error(f"Ошибка в handle_pdf: {e}")
+        await update.message.reply_text(f"❌ Ошибка при обработке PDF: {e}")
+
+        await update.message.reply_text(
+            "📋 Попробуйте ещё раз:",
+            reply_markup=create_main_menu()
+        )
